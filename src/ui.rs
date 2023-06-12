@@ -1,11 +1,14 @@
-use std::{io, thread, time::{Duration, Instant}};
+// ui.rs
+
+use std::{io, thread, time::{Duration, Instant}, process::Command, str};
+use regex::Regex;
 use tui::{
     backend::{CrosstermBackend, Backend}, 
-    widgets::{Widget, Block, Borders, canvas::{Canvas, Map, MapResolution}, ListItem, ListState, List},
+    widgets::{Block, Borders, ListItem, ListState, List},
     layout::{Layout, Constraint, Direction},
     style::{Color, Style, Modifier},
     Terminal,
-    Frame, text::Span,
+    Frame, 
 };
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -86,7 +89,7 @@ fn ui<B: Backend>(frame: &mut Frame<B>, app: &mut App) {
         .items
         .iter()
         .map(|i| {
-            ListItem::new(*i).style(
+            ListItem::new(format!("{} - {}", i.0, *&i.1)).style(
                 Style::default()
                     .fg(Color::White)
                     // .bg(Color::White)
@@ -114,6 +117,47 @@ fn ui<B: Backend>(frame: &mut Frame<B>, app: &mut App) {
     frame.render_widget(block, chunks[1]);
 }
 
+pub fn get_unicode(fname: &str, print: bool) -> Vec<(char, u32, &str)> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("otfinfo -u {fname}"))
+        .output()
+        .expect("Failed to execute");
+    let stdout = str::from_utf8(&output.stdout).unwrap();
+
+    let re = Regex::new(r"(?x) 
+        uni([[:alnum:]]+)   # Unicode
+        \s                  # White space
+        ([[:alnum:]]+)      # Glyph number
+        \s                  # White space
+        ([[:alnum:]-]+)     # Name
+    ").unwrap();
+
+    if print == true {
+        for cap in re.captures_iter(stdout) {
+            let unicode_value = std::char::from_u32(
+                u32::from_str_radix(&cap[1], 16)
+                    .unwrap()
+            ).unwrap();
+
+            println!("{} - {}", &cap[3], unicode_value);
+        }
+    }
+
+    re.captures_iter(stdout)
+        .map(|cap| {
+            let unicode_value = std::char::from_u32(
+                u32::from_str_radix(&cap[1], 16)
+                    .unwrap()
+            ).unwrap();
+            let glyph_value = u32::from_str_radix(&cap[2], 10).unwrap();
+            // let desc = String::from(&cap[3]).to_owned().as_str();
+
+            (unicode_value, glyph_value, desc)
+        })
+        .collect()
+}
+
 pub struct StatefulList<T> {
     items: Vec<T>,
     state: ListState,
@@ -121,10 +165,12 @@ pub struct StatefulList<T> {
 
 impl <T> StatefulList<T> {
     fn new(items: Vec<T>) -> StatefulList<T> {
-        StatefulList {
+        let mut stateful_list = StatefulList {
             items: items,
             state: ListState::default(),
-        }
+        };
+        stateful_list.state.select(Some(0));
+        stateful_list
     }
 
     fn next(&mut self) {
@@ -157,20 +203,32 @@ impl <T> StatefulList<T> {
 }
 
 struct App<'a> {
-    fnames: StatefulList<&'a str>,
+    fnames: StatefulList<(usize, &'a str)>,
+    char_info: StatefulList<(char, u32, &'a str)>,
 }
 
 impl <'a> App<'a> {
     fn new() -> App<'a> {
         let fnames = vec![
-            "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Regular.ttf",
-            "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Bold.ttf",
-            "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Light.ttf",
-            "/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Retina.ttf",
-        ];
+                "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Regular.ttf",
+                "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Bold.ttf",
+                "/home/marchall/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Light.ttf",
+                "/usr/share/fonts/TTF/FiraCodeNerdFontPropo-Retina.ttf",
+            ];
+        let fnames_list: Vec<(usize, &str)> = fnames
+            .iter()
+            .enumerate()
+            .map(|f| {
+                (f.0, *f.1)
+            })
+            .collect();
+
+        let char_info = get_unicode(fnames[0], true);
+
         // TODO: Add available characters list which is computed by fonttools.rs
         App {
-            fnames: StatefulList::new(fnames),
+            fnames: StatefulList::new(fnames_list),
+            char_info: StatefulList::new(char_info),
         }
     }
 }

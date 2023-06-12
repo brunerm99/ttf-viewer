@@ -27,4 +27,9 @@ pub fn get_unicode(fname: &str) {
 
         println!("{} - {}", &cap[3], unicode_value);
     }
+    // re.captures_iter(stdout)
+    //     .map(|cap| {
+
+    //     })
+    //     ;
 }
